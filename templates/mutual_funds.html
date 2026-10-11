@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block title %}Mutual Funds - Stock Gains Analyzer{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active">Mutual funds</li>
+            </ol>
+        </nav>
+    </div>
+    <div class="col-12 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h2 class="mb-0"><i class="fas fa-piggy-bank me-2"></i>Mutual fund transactions</h2>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('export_mf_ledger') }}" class="btn btn-outline-success btn-sm">
+                <i class="fas fa-file-excel me-1"></i>Export ledger
+            </a>
+            {% if has_mf_analysis %}
+            <a href="{{ url_for('mutual_funds_summary') }}" class="btn btn-primary btn-sm">
+                <i class="fas fa-chart-bar me-1"></i>MF gains summary
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    <p class="text-muted mt-2 mb-0">
+        Record purchases and redemptions (units × NAV) for FIFO capital gains. Dividends are tracked separately for income; they are not matched in the gains engine.
+    </p>
+</div>
+
+<ul class="nav nav-tabs mb-3" id="mfTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="trades-tab" data-bs-toggle="tab" data-bs-target="#trades-panel" type="button" role="tab">Purchases &amp; redemptions</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="div-tab" data-bs-toggle="tab" data-bs-target="#div-panel" type="button" role="tab">Dividends</button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <div class="tab-pane fade show active" id="trades-panel" role="tabpanel">
+        <div class="row">
+            <div class="col-lg-5">
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="fas fa-plus-circle me-2"></i>Add purchase or redemption</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="post" action="{{ url_for('mutual_funds_add_trade') }}">
+                            <div class="mb-3">
+                                <label class="form-label" for="txn_date">Date</label>
+                                <input type="date" class="form-control" id="txn_date" name="txn_date" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="fund_name">Scheme / fund name</label>
+                                <input type="text" class="form-control" id="fund_name" name="fund_name" placeholder="e.g. Parag Parikh Flexi Cap Fund" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="isin">ISIN (optional)</label>
+                                <input type="text" class="form-control" id="isin" name="isin" placeholder="Used as symbol when set">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="txn_kind">Type</label>
+                                <select class="form-select" id="txn_kind" name="txn_kind">
+                                    <option value="purchase">Purchase (buy units)</option>
+                                    <option value="redemption">Redemption (sell units)</option>
+                                </select>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label" for="units">Units</label>
+                                    <input type="number" step="any" min="0" class="form-control" id="units" name="units" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label" for="nav">NAV (per unit)</label>
+                                    <input type="number" step="any" min="0" class="form-control" id="nav" name="nav" required>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="fees">Fees / charges (optional)</label>
+                                <input type="number" step="any" min="0" class="form-control" id="fees" name="fees" value="0">
+                            </div>
+                            <button type="submit" class="btn btn-primary">Add transaction</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <div class="card mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-list me-2"></i>Trades ({{ mf_trade_count }})</h5>
+                        {% if mf_trade_count %}
+                        <form method="post" action="{{ url_for('mutual_funds_clear') }}" class="d-inline" onsubmit="return confirm('Remove all trades?');">
+                            <input type="hidden" name="which" value="trades">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Clear all</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    <div class="card-body p-0">
+                        {% if mf_trades %}
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Fund</th>
+                                        <th>Symbol</th>
+                                        <th>Type</th>
+                                        <th class="text-end">Units</th>
+                                        <th class="text-end">NAV</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in mf_trades %}
+                                    <tr>
+                                        <td>{{ row.Txn_Date.strftime('%Y-%m-%d') if row.Txn_Date else '' }}</td>
+                                        <td>{{ row.ISIN_Name }}</td>
+                                        <td><code>{{ row.Symbol }}</code></td>
+                                        <td><span class="badge bg-{% if row.Type == 'BUY' %}success{% else %}warning{% endif %}">{{ row.Type }}</span></td>
+                                        <td class="text-end">{{ "%.4f"|format(row.Quantity) }}</td>
+                                        <td class="text-end">{{ "%.4f"|format(row.Price) }}</td>
+                                        <td>
+                                            <form method="post" action="{{ url_for('mutual_funds_delete_trade', index=loop.index0) }}" class="d-inline" onsubmit="return confirm('Delete this row?');">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger py-0">×</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted p-3 mb-0">No trades yet. Add a purchase or redemption on the left.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="card-title">FIFO capital gains (mutual funds)</h6>
+                        <p class="card-text small text-muted">Uses the same FIFO engine as stocks. Redemptions must pair with earlier purchases for the same symbol (ISIN or generated <code>MF_…</code> code).</p>
+                        <form method="post" action="{{ url_for('mutual_funds_analyze') }}">
+                            <button type="submit" class="btn btn-success" {% if not mf_trade_count %}disabled{% endif %}>
+                                <i class="fas fa-calculator me-1"></i>Calculate MF gains
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="div-panel" role="tabpanel">
+        <div class="row">
+            <div class="col-lg-5">
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="fas fa-coins me-2"></i>Add dividend</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="post" action="{{ url_for('mutual_funds_add_dividend') }}">
+                            <div class="mb-3">
+                                <label class="form-label" for="div_date">Date</label>
+                                <input type="date" class="form-control" id="div_date" name="div_date" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="div_fund_name">Scheme / fund name</label>
+                                <input type="text" class="form-control" id="div_fund_name" name="div_fund_name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="div_isin">ISIN (optional)</label>
+                                <input type="text" class="form-control" id="div_isin" name="div_isin">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="div_amount">Amount received</label>
+                                <input type="number" step="any" min="0" class="form-control" id="div_amount" name="div_amount" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="div_notes">Notes (optional)</label>
+                                <input type="text" class="form-control" id="div_notes" name="div_notes" placeholder="e.g. IDCW payout">
+                            </div>
+                            <button type="submit" class="btn btn-info text-white">Add dividend</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-list me-2"></i>Dividends ({{ mf_dividend_count }})</h5>
+                        {% if mf_dividend_count %}
+                        <form method="post" action="{{ url_for('mutual_funds_clear') }}" class="d-inline" onsubmit="return confirm('Remove all dividends?');">
+                            <input type="hidden" name="which" value="dividends">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Clear all</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    <div class="card-body p-0">
+                        {% if mf_dividends %}
+                        <div class="table-responsive">
+                            <table class="table table-striped mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Fund</th>
+                                        <th class="text-end">Amount</th>
+                                        <th>Notes</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in mf_dividends %}
+                                    <tr>
+                                        <td>{{ row.Date.strftime('%Y-%m-%d') if row.Date else '' }}</td>
+                                        <td>{{ row.Fund_Name }}</td>
+                                        <td class="text-end">{{ "%.2f"|format(row.Amount) }}</td>
+                                        <td class="small text-muted">{{ row.Notes or '—' }}</td>
+                                        <td>
+                                            <form method="post" action="{{ url_for('mutual_funds_delete_dividend', index=loop.index0) }}" class="d-inline" onsubmit="return confirm('Delete this dividend?');">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger py-0">×</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted p-3 mb-0">No dividends recorded.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="alert alert-secondary mb-0">
+                    <strong>Total dividends recorded:</strong> {{ "%.2f"|format(dividend_total) }}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

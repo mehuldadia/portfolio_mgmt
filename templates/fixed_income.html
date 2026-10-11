@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block title %}Fixed income{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active">Fixed income</li>
+            </ol>
+        </nav>
+    </div>
+    <div class="col-12 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h2 class="mb-0"><i class="fas fa-landmark me-2"></i>Fixed income transactions</h2>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('export_fi_ledger') }}" class="btn btn-outline-success btn-sm">
+                <i class="fas fa-file-excel me-1"></i>Export ledger
+            </a>
+            {% if fi_trade_count %}
+            <a href="{{ url_for('fixed_income_summary') }}" class="btn btn-primary btn-sm">
+                <i class="fas fa-chart-bar me-1"></i>FI gains summary
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    <p class="text-muted mt-2 mb-0">
+        Record purchases and sales/redemptions using notional units × clean price (same FIFO model as stocks). Log coupons and interest separately; they count as income on the dashboard, not capital gains.
+    </p>
+</div>
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+    <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#fi-trades" type="button">Trades</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#fi-int" type="button">Coupons &amp; interest</button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <div class="tab-pane fade show active" id="fi-trades">
+        <div class="row">
+            <div class="col-lg-5">
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="fas fa-plus-circle me-2"></i>Add purchase or sale</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="post" action="{{ url_for('fixed_income_add_trade') }}">
+                            <div class="mb-3">
+                                <label class="form-label" for="txn_date">Date</label>
+                                <input type="date" class="form-control" id="txn_date" name="txn_date" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="instrument_name">Instrument</label>
+                                <input type="text" class="form-control" id="instrument_name" name="instrument_name" placeholder="e.g. 7.5% GOI 2034" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="isin">ISIN (optional)</label>
+                                <input type="text" class="form-control" id="isin" name="isin">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="txn_kind">Type</label>
+                                <select class="form-select" id="txn_kind" name="txn_kind">
+                                    <option value="purchase">Purchase</option>
+                                    <option value="redemption">Sale / maturity (reduction)</option>
+                                </select>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label" for="units">Notional units / face</label>
+                                    <input type="number" step="any" min="0" class="form-control" id="units" name="units" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label" for="nav">Clean price (per unit)</label>
+                                    <input type="number" step="any" min="0" class="form-control" id="nav" name="nav" required>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="fees">Fees (optional)</label>
+                                <input type="number" step="any" min="0" class="form-control" id="fees" name="fees" value="0">
+                            </div>
+                            <button type="submit" class="btn btn-primary">Add</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <div class="card mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Trades ({{ fi_trade_count }})</h5>
+                        {% if fi_trade_count %}
+                        <form method="post" action="{{ url_for('fixed_income_clear') }}" class="d-inline" onsubmit="return confirm('Clear all FI trades?');">
+                            <input type="hidden" name="which" value="trades">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Clear all</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    <div class="card-body p-0">
+                        {% if fi_trades %}
+                        <div class="table-responsive">
+                            <table class="table table-striped mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Instrument</th>
+                                        <th>Symbol</th>
+                                        <th>Type</th>
+                                        <th class="text-end">Units</th>
+                                        <th class="text-end">Price</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in fi_trades %}
+                                    <tr>
+                                        <td>{{ row.Txn_Date.strftime('%Y-%m-%d') if row.Txn_Date else '' }}</td>
+                                        <td>{{ row.ISIN_Name }}</td>
+                                        <td><code>{{ row.Symbol }}</code></td>
+                                        <td><span class="badge bg-{% if row.Type == 'BUY' %}success{% else %}warning{% endif %}">{{ row.Type }}</span></td>
+                                        <td class="text-end">{{ "%.4f"|format(row.Quantity) }}</td>
+                                        <td class="text-end">{{ "%.4f"|format(row.Price) }}</td>
+                                        <td>
+                                            <form method="post" action="{{ url_for('fixed_income_delete_trade', index=loop.index0) }}" class="d-inline" onsubmit="return confirm('Delete?');">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger py-0">×</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted p-3 mb-0">No trades yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="card-title">FIFO capital gains</h6>
+                        <p class="small text-muted mb-2">Symbols use ISIN when provided, else <code>FI_…</code> from the instrument name.</p>
+                        <form method="post" action="{{ url_for('fixed_income_analyze') }}">
+                            <button type="submit" class="btn btn-success" {% if not fi_trade_count %}disabled{% endif %}>Open FI gains report</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="fi-int">
+        <div class="row">
+            <div class="col-lg-5">
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">Add coupon / interest</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="post" action="{{ url_for('fixed_income_add_interest') }}">
+                            <div class="mb-3">
+                                <label class="form-label" for="int_date">Payment date</label>
+                                <input type="date" class="form-control" id="int_date" name="int_date" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="int_name">Instrument</label>
+                                <input type="text" class="form-control" id="int_name" name="int_name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="int_isin">ISIN (optional)</label>
+                                <input type="text" class="form-control" id="int_isin" name="int_isin">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="int_amount">Amount</label>
+                                <input type="number" step="any" min="0" class="form-control" id="int_amount" name="int_amount" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="int_notes">Notes (optional)</label>
+                                <input type="text" class="form-control" id="int_notes" name="int_notes">
+                            </div>
+                            <button type="submit" class="btn btn-info text-white">Add</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Interest ({{ fi_interest_count }})</h5>
+                        {% if fi_interest_count %}
+                        <form method="post" action="{{ url_for('fixed_income_clear') }}" class="d-inline" onsubmit="return confirm('Clear all interest rows?');">
+                            <input type="hidden" name="which" value="interest">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Clear all</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    <div class="card-body p-0">
+                        {% if fi_interest %}
+                        <div class="table-responsive">
+                            <table class="table table-striped mb-0">
+                                <thead class="table-dark">
+                                    <tr><th>Date</th><th>Instrument</th><th class="text-end">Amount</th><th>Notes</th><th></th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in fi_interest %}
+                                    <tr>
+                                        <td>{{ row.Date.strftime('%Y-%m-%d') if row.Date else '' }}</td>
+                                        <td>{{ row.Fund_Name }}</td>
+                                        <td class="text-end">{{ "%.2f"|format(row.Amount) }}</td>
+                                        <td class="small">{{ row.Notes or '—' }}</td>
+                                        <td>
+                                            <form method="post" action="{{ url_for('fixed_income_delete_interest', index=loop.index0) }}" class="d-inline" onsubmit="return confirm('Delete?');">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger py-0">×</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted p-3 mb-0">No interest entries.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="alert alert-secondary mt-3 mb-0">
+                    <strong>Total interest recorded:</strong> {{ "%.2f"|format(interest_total) }}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Stock Gains Analyzer{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="fas fa-upload me-2"></i>Upload Stock Transactions</h4>
+            </div>
+            <div class="card-body">
+                <p class="lead">Upload your stock transaction Excel file to analyze capital gains and losses.</p>
+                
+                <form method="post" action="{{ url_for('upload_file') }}" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Select Excel File</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".xlsx,.xls" required>
+                        <div class="form-text">Supported formats: .xlsx, .xls</div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="fas fa-upload me-2"></i>Upload and Analyze
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Excel File Format</h5>
+            </div>
+            <div class="card-body">
+                <p>Your Excel file should contain the following columns:</p>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Column Name</th>
+                                <th>Description</th>
+                                <th>Required</th>
+                                <th>Example</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>Trx date</code></td>
+                                <td>Transaction date</td>
+                                <td><span class="badge bg-danger">Required</span></td>
+                                <td>2024-01-15</td>
+                            </tr>
+                            <tr>
+                                <td><code>ISIN Code</code></td>
+                                <td>ISIN identifier (used as Symbol)</td>
+                                <td><span class="badge bg-danger">Required</span></td>
+                                <td>INE467B, INE123C</td>
+                            </tr>
+                            <tr>
+                                <td><code>ISIN Name</code></td>
+                                <td>Stock name</td>
+                                <td><span class="badge bg-danger">Required</span></td>
+                                <td>Apple Inc, Microsoft</td>
+                            </tr>
+                            <tr>
+                                <td><code>Dr Cr</code></td>
+                                <td>Transaction type (DR=Buy, CR=Sell)</td>
+                                <td><span class="badge bg-danger">Required</span></td>
+                                <td>DR or CR</td>
+                            </tr>
+                            <tr>
+                                <td><code>DP Qty</code></td>
+                                <td>Number of shares</td>
+                                <td><span class="badge bg-danger">Required</span></td>
+                                <td>100</td>
+                            </tr>
+                            <tr>
+                                <td><code>Closing price</code></td>
+                                <td>Price per share</td>
+                                <td><span class="badge bg-danger">Required</span></td>
+                                <td>150.25</td>
+                            </tr>
+                            <tr>
+                                <td><code>Amt</code></td>
+                                <td>Transaction amount</td>
+                                <td><span class="badge bg-danger">Required</span></td>
+                                <td>15025.00</td>
+                            </tr>
+                            <tr>
+                                <td><code>Sett Id</code></td>
+                                <td>Settlement ID</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>SET001</td>
+                            </tr>
+                            <tr>
+                                <td><code>Trx Id</code></td>
+                                <td>Transaction ID</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>TRX001</td>
+                            </tr>
+                            <tr>
+                                <td><code>Counter BO Id</code></td>
+                                <td>Counter party BO ID</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>BO123</td>
+                            </tr>
+                            <tr>
+                                <td><code>Counter BO Name</code></td>
+                                <td>Counter party BO Name</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>ABC Securities</td>
+                            </tr>
+                            <tr>
+                                <td><code>Counter DP Sett Id</code></td>
+                                <td>Counter DP Settlement ID</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>DPSET001</td>
+                            </tr>
+                            <tr>
+                                <td><code>Last Modi D Time</code></td>
+                                <td>Last modification timestamp</td>
+                                <td><span class="badge bg-secondary">Optional</span></td>
+                                <td>2024-01-15 10:30:00</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-calculator me-2"></i>Features</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-chart-line text-primary me-2"></i>Capital Gains Analysis</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="fas fa-check text-success me-2"></i>FIFO (First In, First Out) calculation</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Short-term vs Long-term classification</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Automatic transaction matching</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-file-excel text-success me-2"></i>Export & Reporting</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="fas fa-check text-success me-2"></i>Detailed Excel reports</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Yearly summaries</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Interactive charts</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+
+
+

@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+
+{% block title %}Charts - Stock Gains Analyzer{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('stocks') }}">Stocks</a></li>
+                <li class="breadcrumb-item active">Charts</li>
+            </ol>
+        </nav>
+        <h2><i class="fas fa-chart-pie me-2"></i>Stock charts</h2>
+        <p class="text-muted">Visual analytics for uploaded equity transactions (same data as the Stocks page).</p>
+    </div>
+</div>
+
+<!-- Chart Controls -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <h5 class="mb-0">Chart Options</h5>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-outline-primary active" onclick="showChart('yearly')">
+                                <i class="fas fa-chart-line me-1"></i>Yearly Trends
+                            </button>
+                            <button type="button" class="btn btn-outline-primary" onclick="showChart('classification')">
+                                <i class="fas fa-chart-pie me-1"></i>Tax Classification
+                            </button>
+                            <button type="button" class="btn btn-outline-primary" onclick="showChart('symbols')">
+                                <i class="fas fa-chart-bar me-1"></i>By Symbol
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Yearly Trends Chart -->
+<div class="row" id="yearly-chart-section">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>Yearly Capital Gains Trends</h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="yearlyChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tax Classification Chart -->
+<div class="row" id="classification-chart-section" style="display: none;">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Gains vs Losses</h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="gainsLossesChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-doughnut me-2"></i>Short-term vs Long-term</h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="taxClassificationChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Symbols Chart -->
+<div class="row" id="symbols-chart-section" style="display: none;">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Gains by Symbol</h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="symbolsChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Statistics -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Chart Data Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="row" id="chartSummary">
+                    <!-- Summary data will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let yearlyChart, gainsLossesChart, taxClassificationChart, symbolsChart;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadChartData();
+});
+
+function showChart(chartType) {
+    // Hide all chart sections
+    document.getElementById('yearly-chart-section').style.display = 'none';
+    document.getElementById('classification-chart-section').style.display = 'none';
+    document.getElementById('symbols-chart-section').style.display = 'none';
+    
+    // Remove active class from all buttons
+    document.querySelectorAll('.btn-group .btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Show selected chart and activate button
+    document.getElementById(chartType + '-chart-section').style.display = 'block';
+    event.target.classList.add('active');
+}
+
+async function loadChartData() {
+    try {
+        const [summaryResponse, yearlyResponse, gainsResponse] = await Promise.all([
+            fetch('/api/summary'),
+            fetch('/api/yearly'),
+            fetch('/api/gains')
+        ]);
+        
+        const summary = await summaryResponse.json();
+        const yearlyData = await yearlyResponse.json();
+        const gainsData = await gainsResponse.json();
+        
+        createYearlyChart(yearlyData);
+        createGainsLossesChart(summary);
+        createTaxClassificationChart(summary);
+        createSymbolsChart(gainsData);
+        updateChartSummary(summary, yearlyData, gainsData);
+        
+    } catch (error) {
+        console.error('Error loading chart data:', error);
+    }
+}
+
+function createYearlyChart(yearlyData) {
+    const ctx = document.getElementById('yearlyChart').getContext('2d');
+    
+    const years = Object.keys(yearlyData).sort();
+    const netGains = years.map(year => yearlyData[year].net_gain);
+    const shortTermGains = years.map(year => yearlyData[year].short_term_gains);
+    const longTermGains = years.map(year => yearlyData[year].long_term_gains);
+    
+    if (yearlyChart) {
+        yearlyChart.destroy();
+    }
+    
+    yearlyChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: years,
+            datasets: [
+                {
+                    label: 'Net Gain',
+                    data: netGains,
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    tension: 0.1
+                },
+                {
+                    label: 'Short-term Gains',
+                    data: shortTermGains,
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    tension: 0.1
+                },
+                {
+                    label: 'Long-term Gains',
+                    data: longTermGains,
+                    borderColor: 'rgb(54, 162, 235)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    tension: 0.1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toFixed(2);
+                        }
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': $' + context.parsed.y.toFixed(2);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function createGainsLossesChart(summary) {
+    const ctx = document.getElementById('gainsLossesChart').getContext('2d');
+    
+    if (gainsLossesChart) {
+        gainsLossesChart.destroy();
+    }
+    
+    gainsLossesChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Gains', 'Losses'],
+            datasets: [{
+                data: [summary.total_gains, summary.total_losses],
+                backgroundColor: [
+                    'rgba(40, 167, 69, 0.8)',
+                    'rgba(220, 53, 69, 0.8)'
+                ],
+                borderColor: [
+                    'rgba(40, 167, 69, 1)',
+                    'rgba(220, 53, 69, 1)'
+                ],
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.label + ': $' + context.parsed.toFixed(2);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function createTaxClassificationChart(summary) {
+    const ctx = document.getElementById('taxClassificationChart').getContext('2d');
+    
+    if (taxClassificationChart) {
+        taxClassificationChart.destroy();
+    }
+    
+    taxClassificationChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Short-term', 'Long-term'],
+            datasets: [{
+                data: [summary.short_term_gains + summary.short_term_losses, 
+                       summary.long_term_gains + summary.long_term_losses],
+                backgroundColor: [
+                    'rgba(255, 193, 7, 0.8)',
+                    'rgba(13, 202, 240, 0.8)'
+                ],
+                borderColor: [
+                    'rgba(255, 193, 7, 1)',
+                    'rgba(13, 202, 240, 1)'
+                ],
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.label + ': $' + context.parsed.toFixed(2);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function createSymbolsChart(gainsData) {
+    const ctx = document.getElementById('symbolsChart').getContext('2d');
+    
+    // Group gains by symbol
+    const symbolGains = {};
+    gainsData.forEach(gain => {
+        if (!symbolGains[gain.symbol]) {
+            symbolGains[gain.symbol] = 0;
+        }
+        symbolGains[gain.symbol] += parseFloat(gain.gain_loss);
+    });
+    
+    const symbols = Object.keys(symbolGains);
+    const gains = Object.values(symbolGains);
+    
+    if (symbolsChart) {
+        symbolsChart.destroy();
+    }
+    
+    symbolsChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: symbols,
+            datasets: [{
+                label: 'Net Gain/Loss',
+                data: gains,
+                backgroundColor: gains.map(gain => 
+                    gain >= 0 ? 'rgba(40, 167, 69, 0.8)' : 'rgba(220, 53, 69, 0.8)'
+                ),
+                borderColor: gains.map(gain => 
+                    gain >= 0 ? 'rgba(40, 167, 69, 1)' : 'rgba(220, 53, 69, 1)'
+                ),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toFixed(2);
+                        }
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': $' + context.parsed.y.toFixed(2);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function updateChartSummary(summary, yearlyData, gainsData) {
+    const summaryDiv = document.getElementById('chartSummary');
+    
+    // Calculate additional statistics
+    const years = Object.keys(yearlyData);
+    const avgYearlyGain = years.length > 0 ? 
+        years.reduce((sum, year) => sum + yearlyData[year].net_gain, 0) / years.length : 0;
+    
+    const symbols = [...new Set(gainsData.map(gain => gain.symbol))];
+    
+    summaryDiv.innerHTML = `
+        <div class="col-md-3">
+            <div class="text-center">
+                <h6 class="text-muted">Total Years</h6>
+                <h4>${years.length}</h4>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="text-center">
+                <h6 class="text-muted">Average Yearly Gain</h6>
+                <h4 class="${avgYearlyGain >= 0 ? 'text-success' : 'text-danger'}">
+                    $${avgYearlyGain.toFixed(2)}
+                </h4>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="text-center">
+                <h6 class="text-muted">Symbols Traded</h6>
+                <h4>${symbols.length}</h4>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="text-center">
+                <h6 class="text-muted">Total Transactions</h6>
+                <h4>${summary.total_transactions}</h4>
+            </div>
+        </div>
+    `;
+}
+</script>
+{% endblock %}
+
+
+
+
+

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Stocks{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active">Stocks</li>
+            </ol>
+        </nav>
+        <h2><i class="fas fa-chart-line me-2"></i>Stocks</h2>
+        <p class="text-muted">Upload your broker Excel file, then review FIFO capital gains, yearly breakdown, and exports on this same page.</p>
+    </div>
+</div>
+
+<div class="row" id="stock-upload">
+    <div class="col-lg-10 mx-auto">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="fas fa-upload me-2"></i>Upload transactions</h4>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('upload_file') }}" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Excel file</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".xlsx,.xls" required>
+                        <div class="form-text">.xlsx or .xls</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="fas fa-upload me-2"></i>Upload and analyze
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Required columns</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-sm mb-0">
+                        <thead><tr><th>Column</th><th>Example</th></tr></thead>
+                        <tbody>
+                            <tr><td><code>Trx date</code></td><td>2024-01-15</td></tr>
+                            <tr><td><code>ISIN Code</code></td><td>INE…</td></tr>
+                            <tr><td><code>ISIN Name</code></td><td>Company name</td></tr>
+                            <tr><td><code>Dr Cr</code></td><td>DR / CR</td></tr>
+                            <tr><td><code>DP Qty</code></td><td>100</td></tr>
+                            <tr><td><code>Closing price</code></td><td>150.25</td></tr>
+                            <tr><td><code>Amt</code></td><td>15025.00</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if stock_summary %}
+<hr class="my-5">
+<div id="stock-results" class="row">
+    <div class="col-12">
+        {% include 'partials/stock_gains_summary.html' %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    if (location.hash === '#stock-results') {
+        document.getElementById('stock-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+});
+</script>
+{% endblock %}
