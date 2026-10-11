@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Property &amp; assets{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active">Property &amp; assets</li>
+            </ol>
+        </nav>
+        <h2><i class="fas fa-building me-2"></i>Property &amp; fixed assets</h2>
+        <p class="text-muted">Track acquisition cost for real estate, vehicles, or equipment. When you sell, record proceeds to realize gain/loss in that year on the dashboard (proceeds − cost basis).</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-5 mb-4">
+        <div class="card">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Add holding</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('property_add') }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="p_name">Name / description</label>
+                        <input type="text" class="form-control" id="p_name" name="p_name" required placeholder="e.g. Apartment 4B, Main St">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="p_type">Type</label>
+                        <select class="form-select" id="p_type" name="p_type">
+                            <option value="property">Real property</option>
+                            <option value="vehicle">Vehicle</option>
+                            <option value="equipment">Equipment</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="p_acq">Acquisition date</label>
+                        <input type="date" class="form-control" id="p_acq" name="p_acq" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="p_cost">Total cost basis</label>
+                        <input type="number" step="any" min="0" class="form-control" id="p_cost" name="p_cost" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="p_notes">Notes (optional)</label>
+                        <input type="text" class="form-control" id="p_notes" name="p_notes">
+                    </div>
+                    <button type="submit" class="btn btn-secondary">Save asset</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Assets ({{ property_assets|length }})</h5>
+                {% if property_assets %}
+                <form method="post" action="{{ url_for('property_clear') }}" class="d-inline" onsubmit="return confirm('Remove all property records?');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Clear all</button>
+                </form>
+                {% endif %}
+            </div>
+            <div class="card-body p-0">
+                {% if property_assets %}
+                <div class="table-responsive">
+                    <table class="table table-striped mb-0 align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Acquired</th>
+                                <th class="text-end">Cost</th>
+                                <th>Status</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in property_assets %}
+                            <tr>
+                                <td>{{ row.name }}</td>
+                                <td>{{ row.asset_type }}</td>
+                                <td>{{ row.acquisition_date.strftime('%Y-%m-%d') if row.acquisition_date else '' }}</td>
+                                <td class="text-end">${{ "%.2f"|format(row.cost_basis) }}</td>
+                                <td>
+                                    {% if row.disposition_date %}
+                                    <span class="badge bg-secondary">Sold {{ row.disposition_date.strftime('%Y-%m-%d') }}</span>
+                                    <br><small class="text-muted">Gain: ${{ "%.2f"|format((row.disposition_proceeds or 0) - row.cost_basis) }}</small>
+                                    {% else %}
+                                    <span class="badge bg-success">Held</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if not row.disposition_date %}
+                                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#disp{{ loop.index0 }}">Sell</button>
+                                    {% endif %}
+                                    <form method="post" action="{{ url_for('property_delete', index=loop.index0) }}" class="d-inline" onsubmit="return confirm('Delete this record?');">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">×</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% if not row.disposition_date %}
+                            <tr class="collapse" id="disp{{ loop.index0 }}">
+                                <td colspan="6" class="bg-light">
+                                    <form method="post" action="{{ url_for('property_dispose', index=loop.index0) }}" class="row g-2 align-items-end p-2">
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Sale date</label>
+                                            <input type="date" name="disp_date" class="form-control form-control-sm" required>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Proceeds</label>
+                                            <input type="number" step="any" min="0" name="disp_proceeds" class="form-control form-control-sm" required>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <button type="submit" class="btn btn-sm btn-primary w-100">Record sale</button>
+                                        </div>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted p-3 mb-0">No assets yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
