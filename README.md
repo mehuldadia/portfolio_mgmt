@@ -14,12 +14,20 @@ A Flask app to track **stocks** (Excel upload + FIFO capital gains), **mutual fu
 ## Installation
 
 ```bash
-python -m venv venv
-# Windows
-venv\Scripts\activate
-# macOS/Linux
-source venv/bin/activate
-pip install -r requirements.txt
+
+##### create virtual environment
+- python -m venv env_stock_app
+
+###### if you want to deactivate virtual environment
+- deactivate 
+
+###### delete virtual environment
+
+
+# activate virtual environment
+- venv\Scripts\activate
+
+- pip install -r requirements.txt
 ```
 
 ## Usage

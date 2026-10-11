@@ -17,6 +17,10 @@ from modules.mutual_fund_transactions import (
     dividend_records_to_dataframe,
     trade_records_to_dataframe,
 )
+from modules.mutual_fund_excel import (
+    create_mutual_fund_template,
+    read_mutual_fund_transactions,
+)
 from modules.fixed_income_transactions import (
     build_fi_trade_record,
     build_interest_record,
@@ -24,18 +28,25 @@ from modules.fixed_income_transactions import (
 )
 from modules.property_assets import build_property_asset, record_disposition
 
-app = Flask(__name__)
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(APP_DIR)
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(APP_DIR, "templates"),
+    static_folder=os.path.join(APP_DIR, "static"),
+)
 app.secret_key = "your-secret-key-here"
 
-UPLOAD_FOLDER = "data"
-OUTPUT_FOLDER = "output"
+UPLOAD_FOLDER = os.path.join(PROJECT_DIR, "data")
+OUTPUT_FOLDER = os.path.join(PROJECT_DIR, "output")
 ALLOWED_EXTENSIONS = {"xlsx", "xls"}
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-os.makedirs("templates", exist_ok=True)
-os.makedirs("static/css", exist_ok=True)
-os.makedirs("static/js", exist_ok=True)
+os.makedirs(os.path.join(APP_DIR, "templates"), exist_ok=True)
+os.makedirs(os.path.join(APP_DIR, "static", "css"), exist_ok=True)
+os.makedirs(os.path.join(APP_DIR, "static", "js"), exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["OUTPUT_FOLDER"] = OUTPUT_FOLDER
@@ -271,6 +282,47 @@ def mutual_funds():
         dividend_total=dividend_total,
         has_mf_analysis=bool(mf_trade_records),
     )
+
+
+@app.route("/mutual-funds/template")
+def mutual_funds_template():
+    """Download an Excel template with the supported mutual-fund columns."""
+    return send_file(
+        create_mutual_fund_template(),
+        as_attachment=True,
+        download_name="mutual_fund_transactions_template.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/mutual-funds/upload", methods=["POST"])
+def mutual_funds_upload():
+    """Validate and import a mutual-fund transaction workbook."""
+    if "file" not in request.files:
+        flash("Select a mutual-fund Excel file to upload.", "error")
+        return redirect(url_for("mutual_funds"))
+
+    uploaded_file = request.files["file"]
+    if not uploaded_file.filename:
+        flash("Select a mutual-fund Excel file to upload.", "error")
+        return redirect(url_for("mutual_funds"))
+    if not allowed_file(uploaded_file.filename):
+        flash("Invalid file type. Upload an Excel file (.xlsx or .xls).", "error")
+        return redirect(url_for("mutual_funds"))
+
+    try:
+        trades, dividends = read_mutual_fund_transactions(uploaded_file.stream)
+        mf_trade_records.extend(trades)
+        mf_dividend_records.extend(dividends)
+        _sync_fifo_analyses()
+        flash(
+            f"Imported {len(trades)} mutual-fund trade(s) and "
+            f"{len(dividends)} dividend(s).",
+            "success",
+        )
+    except Exception as exc:
+        flash(f"Could not import workbook: {exc}", "error")
+    return redirect(url_for("mutual_funds"))
 
 
 @app.route("/mutual-funds/trade", methods=["POST"])
