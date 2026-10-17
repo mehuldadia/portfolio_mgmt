@@ -3,8 +3,13 @@ Flask web application: stocks, mutual funds, fixed income, property, unified das
 """
 
 from flask import Flask, render_template, request, jsonify, send_file, flash, redirect, url_for
+from io import BytesIO
 import os
 from datetime import datetime
+import tempfile
+import uuid
+import json
+import pandas as pd
 from werkzeug.utils import secure_filename
 
 from modules.transaction_reader import TransactionReader
@@ -27,6 +32,7 @@ from modules.fixed_income_transactions import (
     fi_interest_to_dataframe,
 )
 from modules.property_assets import build_property_asset, record_disposition
+from modules.portfolio_store import PortfolioStore
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(APP_DIR)
@@ -50,6 +56,7 @@ os.makedirs(os.path.join(APP_DIR, "static", "js"), exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["OUTPUT_FOLDER"] = OUTPUT_FOLDER
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
 transaction_reader = TransactionReader()
 gains_calculator = GainsCalculator()
@@ -74,6 +81,43 @@ fi_summary = None
 
 property_portfolio = []
 
+portfolio_store = PortfolioStore(os.path.join(UPLOAD_FOLDER, "portfolio.sqlite3"))
+pending_imports = {}
+
+
+def _restore_record_dates(records, fields):
+    for record in records:
+        for field in fields:
+            value = record.get(field)
+            if value:
+                record[field] = datetime.fromisoformat(value)
+    return records
+
+
+def _load_saved_portfolio():
+    global current_transactions, current_gains, current_positions, current_summary
+
+    stock_records = portfolio_store.load("stock_transactions")
+    if stock_records:
+        current_transactions = pd.DataFrame(stock_records)
+        current_transactions["Txn_Date"] = pd.to_datetime(current_transactions["Txn_Date"])
+        current_gains, current_positions = gains_calculator.calculate_gains(
+            current_transactions
+        )
+        current_summary = gains_calculator.get_gains_summary(current_gains)
+
+    mf_trade_records.extend(_restore_record_dates(portfolio_store.load("mf_trades"), ("Txn_Date",)))
+    mf_dividend_records.extend(_restore_record_dates(portfolio_store.load("mf_dividends"), ("Date",)))
+    fi_trade_records.extend(_restore_record_dates(portfolio_store.load("fi_trades"), ("Txn_Date",)))
+    fi_interest_records.extend(_restore_record_dates(portfolio_store.load("fi_interest"), ("Date",)))
+    property_portfolio.extend(
+        _restore_record_dates(
+            portfolio_store.load("property_assets"),
+            ("acquisition_date", "disposition_date"),
+        )
+    )
+    _sync_fifo_analyses()
+
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -95,6 +139,9 @@ def _sync_fifo_analyses():
     else:
         fi_gains, fi_positions = gains_calculator.calculate_gains(dfi)
         fi_summary = gains_calculator.get_gains_summary(fi_gains)
+
+
+_load_saved_portfolio()
 
 
 def _parse_date(s: str) -> datetime:
@@ -127,6 +174,91 @@ def _gains_to_json(gains):
             }
         )
     return out
+
+
+def _pending_import_page(token):
+    if token not in pending_imports:
+        flash("This import preview has expired. Please upload the file again.", "error")
+        return redirect(url_for("dashboard"))
+    return render_template("import_review.html", **pending_imports[token]["view"])
+
+
+def _save_pending_import(token):
+    global current_transactions, current_gains, current_positions, current_summary
+
+    pending = pending_imports.get(token)
+    if pending is None:
+        raise ValueError("This import preview has expired. Please upload the file again.")
+
+    batch_id = uuid.uuid4().hex
+    uploads_dir = os.path.join(app.config["UPLOAD_FOLDER"], "uploads")
+    os.makedirs(uploads_dir, exist_ok=True)
+    stored_filename = f"{batch_id}_{secure_filename(pending['filename'])}"
+    stored_path = os.path.join(uploads_dir, stored_filename)
+    with open(stored_path, "xb") as saved_file:
+        saved_file.write(pending["file_bytes"])
+
+    batch = {
+        "batch_id": batch_id,
+        "asset_type": pending["asset_type"],
+        "original_filename": pending["filename"],
+        "stored_filename": stored_filename,
+        "imported_at": datetime.now().isoformat(timespec="seconds"),
+        "record_count": pending["record_count"],
+    }
+    try:
+        if pending["asset_type"] == "stocks":
+            transactions = pd.DataFrame(pending["records"])
+            transactions["Txn_Date"] = pd.to_datetime(transactions["Txn_Date"])
+            gains, positions = gains_calculator.calculate_gains(transactions)
+            summary = gains_calculator.get_gains_summary(gains)
+            portfolio_store.replace_many(
+                {"stock_transactions": pending["records"]}, import_batch=batch
+            )
+            current_transactions = transactions
+            current_gains, current_positions, current_summary = gains, positions, summary
+            destination = "stocks"
+        else:
+            trades = mf_trade_records + pending["records"].get("mf_trades", [])
+            dividends = mf_dividend_records + pending["records"].get("mf_dividends", [])
+            portfolio_store.replace_many(
+                {"mf_trades": trades, "mf_dividends": dividends},
+                import_batch=batch,
+            )
+            mf_trade_records[:] = trades
+            mf_dividend_records[:] = dividends
+            _sync_fifo_analyses()
+            destination = "mutual_funds"
+    except Exception:
+        os.remove(stored_path)
+        raise
+
+    pending_imports.pop(token, None)
+    return destination
+
+
+@app.route("/imports/<token>")
+def review_import(token):
+    return _pending_import_page(token)
+
+
+@app.route("/imports/<token>/save", methods=["POST"])
+def save_import(token):
+    try:
+        destination = _save_pending_import(token)
+    except Exception as exc:
+        flash(f"Could not save import: {exc}", "error")
+        return redirect(url_for("review_import", token=token))
+    flash("Import saved to the local portfolio database.", "success")
+    return redirect(url_for(destination))
+
+
+@app.route("/imports/<token>/discard", methods=["POST"])
+def discard_import(token):
+    pending = pending_imports.pop(token, None)
+    flash("Import discarded; saved portfolio data was not changed.", "info")
+    destination = "mutual_funds" if pending and pending["asset_type"] == "mutual_funds" else "stocks"
+    return redirect(url_for(destination))
 
 
 @app.route("/")
@@ -176,26 +308,52 @@ def upload_file():
         return redirect(url_for("stocks"))
 
     if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-        file.save(filepath)
-
+        filename = secure_filename(file.filename) or "stock-transactions.xlsx"
+        file_bytes = file.stream.read()
+        suffix = os.path.splitext(filename)[1].lower()
+        temp_path = None
         try:
-            current_transactions = transaction_reader.read_transactions(filepath)
-            warnings = transaction_reader.validate_transactions(current_transactions)
-            for w in warnings:
-                flash(f"Warning: {w}", "warning")
-
-            current_gains, current_positions = gains_calculator.calculate_gains(
-                current_transactions
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
+                temp_path = temp_file.name
+                temp_file.write(file_bytes)
+            transactions = transaction_reader.read_transactions(temp_path)
+            if transactions.empty:
+                raise ValueError("The workbook contains no stock transactions")
+            warnings = transaction_reader.validate_transactions(transactions)
+            preview_gains, preview_positions = gains_calculator.calculate_gains(
+                transactions
             )
-            current_summary = gains_calculator.get_gains_summary(current_gains)
+            preview_summary = gains_calculator.get_gains_summary(preview_gains)
 
-            flash("File processed successfully!")
-            return redirect(url_for("stocks") + "#stock-results")
+            records = json.loads(
+                transactions.to_json(orient="records", date_format="iso")
+            )
+            token = uuid.uuid4().hex
+            pending_imports[token] = {
+                "asset_type": "stocks",
+                "filename": filename,
+                "file_bytes": file_bytes,
+                "records": records,
+                "record_count": len(records),
+                "view": {
+                    "title": "Review stock import",
+                    "filename": filename,
+                    "collections": [
+                        {"name": "Stock transactions", "count": len(records), "records": records[:25]}
+                    ],
+                    "warnings": warnings,
+                    "preview_summary": preview_summary,
+                    "position_count": len(preview_positions),
+                    "token": token,
+                },
+            }
+            return redirect(url_for("review_import", token=token))
         except Exception as e:
             flash(f"Error processing file: {str(e)}", "error")
             return redirect(url_for("stocks"))
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
 
     flash("Invalid file type. Please upload an Excel file (.xlsx or .xls)")
     return redirect(url_for("stocks"))
@@ -311,15 +469,34 @@ def mutual_funds_upload():
         return redirect(url_for("mutual_funds"))
 
     try:
-        trades, dividends = read_mutual_fund_transactions(uploaded_file.stream)
-        mf_trade_records.extend(trades)
-        mf_dividend_records.extend(dividends)
-        _sync_fifo_analyses()
-        flash(
-            f"Imported {len(trades)} mutual-fund trade(s) and "
-            f"{len(dividends)} dividend(s).",
-            "success",
-        )
+        file_bytes = uploaded_file.stream.read()
+        trades, dividends = read_mutual_fund_transactions(BytesIO(file_bytes))
+        filename = secure_filename(uploaded_file.filename) or "mutual-fund-transactions.xlsx"
+        trade_preview = json.loads(
+            pd.DataFrame(trades).to_json(orient="records", date_format="iso")
+        ) if trades else []
+        dividend_preview = json.loads(
+            pd.DataFrame(dividends).to_json(orient="records", date_format="iso")
+        ) if dividends else []
+        token = uuid.uuid4().hex
+        pending_imports[token] = {
+            "asset_type": "mutual_funds",
+            "filename": filename,
+            "file_bytes": file_bytes,
+            "records": {"mf_trades": trades, "mf_dividends": dividends},
+            "record_count": len(trades) + len(dividends),
+            "view": {
+                "title": "Review mutual-fund import",
+                "filename": filename,
+                "collections": [
+                    {"name": "Mutual-fund trades", "count": len(trade_preview), "records": trade_preview[:25]},
+                    {"name": "Dividends", "count": len(dividend_preview), "records": dividend_preview[:25]},
+                ],
+                "warnings": [],
+                "token": token,
+            },
+        }
+        return redirect(url_for("review_import", token=token))
     except Exception as exc:
         flash(f"Could not import workbook: {exc}", "error")
     return redirect(url_for("mutual_funds"))
@@ -340,6 +517,7 @@ def mutual_funds_add_trade():
         rec = build_trade_record(
             txn_date, fund_name, isin, txn_kind, units, nav, fees
         )
+        portfolio_store.replace_many({"mf_trades": mf_trade_records + [rec]})
         mf_trade_records.append(rec)
         _sync_fifo_analyses()
         flash("Mutual fund transaction added.", "success")
@@ -358,9 +536,9 @@ def mutual_funds_add_dividend():
         notes = request.form.get("div_notes", "").strip() or None
         if not fund_name:
             raise ValueError("Fund / scheme name is required")
-        mf_dividend_records.append(
-            build_dividend_record(div_date, fund_name, amount, isin, notes)
-        )
+        rec = build_dividend_record(div_date, fund_name, amount, isin, notes)
+        portfolio_store.replace_many({"mf_dividends": mf_dividend_records + [rec]})
+        mf_dividend_records.append(rec)
         flash("Dividend recorded.", "success")
     except Exception as e:
         flash(f"Could not add dividend: {e}", "error")
@@ -370,7 +548,10 @@ def mutual_funds_add_dividend():
 @app.route("/mutual-funds/delete-trade/<int:index>", methods=["POST"])
 def mutual_funds_delete_trade(index: int):
     if 0 <= index < len(mf_trade_records):
-        mf_trade_records.pop(index)
+        records = mf_trade_records.copy()
+        records.pop(index)
+        portfolio_store.replace_many({"mf_trades": records})
+        mf_trade_records[:] = records
         _sync_fifo_analyses()
         flash("Transaction removed.", "success")
     else:
@@ -381,7 +562,10 @@ def mutual_funds_delete_trade(index: int):
 @app.route("/mutual-funds/delete-dividend/<int:index>", methods=["POST"])
 def mutual_funds_delete_dividend(index: int):
     if 0 <= index < len(mf_dividend_records):
-        mf_dividend_records.pop(index)
+        records = mf_dividend_records.copy()
+        records.pop(index)
+        portfolio_store.replace_many({"mf_dividends": records})
+        mf_dividend_records[:] = records
         flash("Dividend removed.", "success")
     else:
         flash("Invalid row index.", "error")
@@ -392,12 +576,15 @@ def mutual_funds_delete_dividend(index: int):
 def mutual_funds_clear():
     which = request.form.get("which", "trades")
     if which == "trades":
+        portfolio_store.replace_many({"mf_trades": []})
         mf_trade_records.clear()
         flash("All mutual fund trades cleared.", "success")
     elif which == "dividends":
+        portfolio_store.replace_many({"mf_dividends": []})
         mf_dividend_records.clear()
         flash("All dividends cleared.", "success")
     else:
+        portfolio_store.replace_many({"mf_trades": [], "mf_dividends": []})
         mf_trade_records.clear()
         mf_dividend_records.clear()
         flash("All mutual fund data cleared.", "success")
@@ -494,9 +681,9 @@ def fixed_income_add_trade():
         fees = float(request.form.get("fees", "") or 0)
         if not name:
             raise ValueError("Instrument name is required")
-        fi_trade_records.append(
-            build_fi_trade_record(txn_date, name, isin, txn_kind, units, nav, fees)
-        )
+        rec = build_fi_trade_record(txn_date, name, isin, txn_kind, units, nav, fees)
+        portfolio_store.replace_many({"fi_trades": fi_trade_records + [rec]})
+        fi_trade_records.append(rec)
         _sync_fifo_analyses()
         flash("Fixed income trade added.", "success")
     except Exception as e:
@@ -514,7 +701,9 @@ def fixed_income_add_interest():
         notes = request.form.get("int_notes", "").strip() or None
         if not name:
             raise ValueError("Instrument name is required")
-        fi_interest_records.append(build_interest_record(d, name, amount, isin, notes))
+        rec = build_interest_record(d, name, amount, isin, notes)
+        portfolio_store.replace_many({"fi_interest": fi_interest_records + [rec]})
+        fi_interest_records.append(rec)
         flash("Interest recorded.", "success")
     except Exception as e:
         flash(f"Could not add interest: {e}", "error")
@@ -524,7 +713,10 @@ def fixed_income_add_interest():
 @app.route("/fixed-income/delete-trade/<int:index>", methods=["POST"])
 def fixed_income_delete_trade(index: int):
     if 0 <= index < len(fi_trade_records):
-        fi_trade_records.pop(index)
+        records = fi_trade_records.copy()
+        records.pop(index)
+        portfolio_store.replace_many({"fi_trades": records})
+        fi_trade_records[:] = records
         _sync_fifo_analyses()
         flash("Trade removed.", "success")
     else:
@@ -535,7 +727,10 @@ def fixed_income_delete_trade(index: int):
 @app.route("/fixed-income/delete-interest/<int:index>", methods=["POST"])
 def fixed_income_delete_interest(index: int):
     if 0 <= index < len(fi_interest_records):
-        fi_interest_records.pop(index)
+        records = fi_interest_records.copy()
+        records.pop(index)
+        portfolio_store.replace_many({"fi_interest": records})
+        fi_interest_records[:] = records
         flash("Removed.", "success")
     else:
         flash("Invalid index.", "error")
@@ -546,10 +741,13 @@ def fixed_income_delete_interest(index: int):
 def fixed_income_clear():
     which = request.form.get("which", "trades")
     if which == "trades":
+        portfolio_store.replace_many({"fi_trades": []})
         fi_trade_records.clear()
     elif which == "interest":
+        portfolio_store.replace_many({"fi_interest": []})
         fi_interest_records.clear()
     else:
+        portfolio_store.replace_many({"fi_trades": [], "fi_interest": []})
         fi_trade_records.clear()
         fi_interest_records.clear()
     _sync_fifo_analyses()
@@ -630,15 +828,15 @@ def property_page():
 @app.route("/property/add", methods=["POST"])
 def property_add():
     try:
-        property_portfolio.append(
-            build_property_asset(
-                request.form.get("p_name", ""),
-                request.form.get("p_type", "other"),
-                _parse_date(request.form.get("p_acq", "")),
-                float(request.form.get("p_cost", "") or 0),
-                request.form.get("p_notes", "").strip() or None,
-            )
+        asset = build_property_asset(
+            request.form.get("p_name", ""),
+            request.form.get("p_type", "other"),
+            _parse_date(request.form.get("p_acq", "")),
+            float(request.form.get("p_cost", "") or 0),
+            request.form.get("p_notes", "").strip() or None,
         )
+        portfolio_store.replace_many({"property_assets": property_portfolio + [asset]})
+        property_portfolio.append(asset)
         flash("Asset saved.", "success")
     except Exception as e:
         flash(f"Could not save: {e}", "error")
@@ -655,11 +853,16 @@ def property_dispose(index: int):
         flash("Already disposed.", "warning")
         return redirect(url_for("property_page"))
     try:
+        updated_asset = a.copy()
         record_disposition(
-            a,
+            updated_asset,
             _parse_date(request.form.get("disp_date", "")),
             float(request.form.get("disp_proceeds", "") or 0),
         )
+        records = property_portfolio.copy()
+        records[index] = updated_asset
+        portfolio_store.replace_many({"property_assets": records})
+        property_portfolio[index] = updated_asset
         flash("Sale recorded.", "success")
     except Exception as e:
         flash(f"Error: {e}", "error")
@@ -669,7 +872,10 @@ def property_dispose(index: int):
 @app.route("/property/delete/<int:index>", methods=["POST"])
 def property_delete(index: int):
     if 0 <= index < len(property_portfolio):
-        property_portfolio.pop(index)
+        records = property_portfolio.copy()
+        records.pop(index)
+        portfolio_store.replace_many({"property_assets": records})
+        property_portfolio[:] = records
         flash("Removed.", "success")
     else:
         flash("Invalid index.", "error")
@@ -678,6 +884,7 @@ def property_delete(index: int):
 
 @app.route("/property/clear", methods=["POST"])
 def property_clear():
+    portfolio_store.replace_many({"property_assets": []})
     property_portfolio.clear()
     flash("All property records cleared.", "success")
     return redirect(url_for("property_page"))

@@ -44,39 +44,26 @@ Open **http://localhost:5000** (dashboard). Use the nav bar to open each asset c
 
 Required columns include: `Trx date`, `ISIN Code`, `ISIN Name`, `Dr Cr` (DR/CR), `DP Qty`, `Closing price`, `Amt`. Optional broker columns are ignored if present.
 
-After upload you are sent to **Stocks** with the **Capital gains analysis** section (`#stock-results`). The legacy path **`/summary`** redirects there.
+The mutual-fund template has one `Transactions` sheet with these columns: `MF_NAME`, `INVESTOR_NAME`, `PAN`, `FOLIO_NUMBER`, `PRODUCT_CODE`, `SCHEME_NAME`, `Scheme Type`, `TRADE_DATE`, `TRANSACTION_TYPE`, `DIVIDEND_RATE`, `AMOUNT`, `UNITS`, `PRICE`, `BROKER`. Purchase/redemption and dividend rows are selected by `TRANSACTION_TYPE`.
+
+After upload, review the parsed transactions and analysis, then choose **Save to portfolio** or **Discard**. Saved stock imports appear on **Stocks** with the **Capital gains analysis** section (`#stock-results`). The legacy path **`/summary`** redirects there.
 
 ## Project structure
-
 ```
-stock_gains_analyzer/
-├── app.py                      # Routes: dashboard, stocks, MF, FI, property, APIs, exports
-├── modules/
-│   ├── transaction_reader.py   # Excel → normalized DataFrame
-│   ├── gains_calculator.py     # FIFO, CapitalGain, Position
-│   ├── excel_exporter.py       # Excel reports
-│   ├── mutual_fund_transactions.py
-│   ├── fixed_income_transactions.py
-│   ├── property_assets.py
-│   └── dashboard_aggregator.py # Unified dashboard numbers
-├── templates/
-│   ├── base.html
-│   ├── dashboard.html
-│   ├── stocks.html             # Upload + gains (includes partial when data exists)
-│   ├── partials/
-│   │   └── stock_gains_summary.html
-│   ├── charts.html
-│   ├── mutual_funds.html, mf_summary.html
-│   ├── fixed_income.html, fi_summary.html
-│   └── property.html
-├── data/                       # Uploaded files
-├── output/                     # Generated Excel
+portfolio_mgmt/
+├── src/
+│   ├── app.py                  # Flask routes and app initialization
+│   ├── modules/                # Readers, calculations, exports, SQLite store
+│   ├── templates/              # Jinja pages and import review
+│   └── static/                 # CSS and JavaScript
+├── data/                       # portfolio.sqlite3 and accepted source workbooks
+├── output/                     # Generated Excel reports
+├── test/                       # Test scripts and sample data
 ├── requirements.txt
-├── sample_data.py
-└── test_system.py
+└── README.md
 ```
 
-Data is held **in memory** until the server restarts.
+Portfolio records are stored locally in `data/portfolio.sqlite3` and restored on startup. Stock and mutual-fund Excel uploads are shown for review before saving; accepted imports update the database and retain the source workbook under `data/uploads/`, while discarded imports are not stored. Database and upload files are excluded from Git.
 
 ## License / disclaimer
 

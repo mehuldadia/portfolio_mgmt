@@ -34,6 +34,9 @@ Thumbs.db
 #personal data for testing
 data/*
 !data/.gitkeep
+data/*.sqlite3
+data/*.sqlite3-*
+data/uploads/
 
 # Generated reports
 output/*

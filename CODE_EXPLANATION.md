@@ -1,19 +1,23 @@
 # Stock Gains Analyzer - Code Explanation
 
+> **Current data storage:** Saved portfolio records are stored in `data/portfolio.sqlite3` and loaded at startup. Excel uploads are previewed first; only confirmed imports update SQLite and retain the source workbook under `data/uploads/`. See [Persistence and Save Workflow](#persistence-and-save-workflow).
+
 ## 📁 Project Structure
 
 ```
 stock_gains_analyzer/
-├── app.py                          # Flask app: dashboard, stocks, MF, FI, property, APIs
-├── modules/
+├── src/app.py                      # Flask app: dashboard, stocks, MF, FI, property, APIs
+├── src/modules/
 │   ├── transaction_reader.py      # Excel → DataFrame
+│   ├── portfolio_store.py         # Local SQLite persistence
 │   ├── gains_calculator.py        # FIFO, short/long-term
 │   ├── excel_exporter.py          # Excel exports
+│   ├── mutual_fund_excel.py       # MF Excel template + upload reader
 │   ├── mutual_fund_transactions.py
 │   ├── fixed_income_transactions.py
 │   ├── property_assets.py
 │   └── dashboard_aggregator.py  # Combined yearly + holdings for dashboard
-├── templates/
+├── src/templates/
 │   ├── base.html                  # Nav: Dashboard, Stocks, MF, FI, Property, Charts
 │   ├── dashboard.html             # Cross-asset summary
 │   ├── stocks.html                # Stock upload + gains on one page
@@ -22,7 +26,7 @@ stock_gains_analyzer/
 │   ├── mutual_funds.html, mf_summary.html
 │   ├── fixed_income.html, fi_summary.html
 │   └── property.html
-├── data/, output/, requirements.txt, sample_data.py, test_system.py
+├── data/, output/, requirements.txt, test/sample_data.py, test/test_system.py
 ```
 
 ---
@@ -45,6 +49,7 @@ http://localhost:5000/              → dashboard() → dashboard.html
 http://localhost:5000/stocks        → stocks() → stocks.html (upload + optional gains partial)
     ↓ (POST upload)
 http://localhost:5000/upload        → upload_file() → redirect /stocks#stock-results
+   http://localhost:5000/upload        → upload_file() → redirect /imports/<token> (review)
     ↓
 http://localhost:5000/summary       → summary() → redirect /stocks#stock-results (legacy bookmark)
     ↓
@@ -98,10 +103,11 @@ All pages extend `base.html` which provides:
 - Passes `stock_summary` (`current_summary`) and `stock_yearly` into `stocks.html`
 - Template shows upload + format help always; includes `partials/stock_gains_summary.html` when `stock_summary` is set
 
-**`@app.route('/upload', methods=['POST'])`**
-- Reads Excel via `TransactionReader`, validates, `calculate_gains`, `get_gains_summary`
-- Stores globals `current_transactions`, `current_gains`, `current_positions`, `current_summary`
-- Redirects to `/stocks#stock-results` so upload and analysis stay on one screen
+**`@app.route('/upload', methods=['POST'])` and `/mutual-funds/upload`**
+- Parses the workbook into a temporary preview and shows transaction rows/warnings
+- Does not change SQLite or retain the workbook until the user confirms Save
+- Save writes normalized transactions and the accepted source file; Discard leaves the portfolio unchanged
+- Mutual-fund uploads use `mutual_fund_excel.py` and preview trade/dividend rows from one statement-format `Transactions` sheet
 
 **`@app.route('/summary')` — Legacy URL**
 - If no data → flash + redirect `/stocks`
@@ -281,6 +287,10 @@ Excel file with 4 sheets:
 
 ---
 
+### Mutual-fund Excel helpers
+
+`modules/mutual_fund_excel.py` generates the statement-format template and reads uploaded transactions and dividends. It delegates trade/dividend normalization to `mutual_fund_transactions.py` and preserves investor and scheme metadata on imported records.
+
 ### **5. templates/base.html - Base Template**
 
 **Purpose:** Common layout for all pages.
@@ -434,6 +444,15 @@ Excel file with 4 sheets:
 
 ---
 
+## Persistence and Save Workflow
+
+- SQLite database: `data/portfolio.sqlite3`. `modules/portfolio_store.py` stores ordered stock, mutual-fund, fixed-income, and property records and accepted-upload metadata.
+- Startup loads the saved records into the app and recalculates derived FIFO gains and positions.
+- Stock and mutual-fund workbook uploads first go to a review page. Save atomically updates the portfolio records and upload metadata, then retains the source workbook under `data/uploads/` with a generated unique filename. Discard does not change the database and does not retain the workbook.
+- Manual MF, FI, and property additions, edits/dispositions, deletes, and clears write through to SQLite.
+- Generated reports remain under `output/`. Database files and accepted source workbooks are ignored by Git.
+- In-memory lists are still used as the current process's working view, so this design is intended for this local single-user app; concurrent multi-user access would need user identity and database-backed request-level reads/writes.
+
 ## 🎯 Key Concepts
 
 ### **FIFO (First In, First Out)**
@@ -457,9 +476,9 @@ Excel file with 4 sheets:
 - Enables dynamic content loading
 
 ### **Global State Management**
-- Current session data stored in global variables
-- Simple but effective for single-user sessions
-- Could be improved with database for multi-user
+- Module-level collections are an in-memory working copy loaded from SQLite at startup
+- Mutating routes write the affected collection to SQLite, so data survives restarts
+- All browser users still share one local portfolio; add authentication and per-user records before multi-user deployment
 
 ---
 
@@ -470,9 +489,9 @@ Excel file with 4 sheets:
    pip install -r requirements.txt
    ```
 
-2. **Run the application:**
+2. **From the project root, run the application:**
    ```bash
-   python app.py
+   python .\src\app.py
    ```
 
 3. **Open browser:** `http://localhost:5000` (dashboard)
@@ -484,6 +503,8 @@ Excel file with 4 sheets:
 ---
 
 ## 📊 Example Excel File Format
+
+The stock upload expects the broker workbook headers `Trx date`, `ISIN Code`, `ISIN Name`, `Dr Cr`, `DP Qty`, `Closing price`, and `Amt`. The generic table below illustrates normalized transaction concepts; it is not the literal stock upload format. For mutual funds, use the app's downloadable template.
 
 | Date       | Type | Symbol | Quantity | Price  | Fees  |
 |------------|------|--------|----------|--------|-------|

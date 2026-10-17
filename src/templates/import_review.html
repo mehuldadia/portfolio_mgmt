@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active">Review import</li>
+            </ol>
+        </nav>
+        <h2><i class="fas fa-clipboard-check me-2"></i>{{ title }}</h2>
+        <p class="text-muted mb-0">{{ filename }} · {{ collections|sum(attribute='count') }} records</p>
+    </div>
+</div>
+
+{% for warning in warnings %}
+<div class="alert alert-warning" role="alert">{{ warning }}</div>
+{% endfor %}
+
+{% if preview_summary is defined %}
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="border rounded p-3 h-100">
+            <div class="small text-muted">Estimated net realized gain/loss</div>
+            <strong>{{ "%.2f"|format(preview_summary.net_gain) }}</strong>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="border rounded p-3 h-100">
+            <div class="small text-muted">Gain transactions</div>
+            <strong>{{ preview_summary.total_transactions }}</strong>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="border rounded p-3 h-100">
+            <div class="small text-muted">Open positions</div>
+            <strong>{{ position_count }}</strong>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% for collection in collections %}
+<section class="mb-4">
+    <div class="d-flex justify-content-between align-items-baseline mb-2">
+        <h4 class="h5 mb-0">{{ collection.name }}</h4>
+        <span class="text-muted small">{{ collection.count }} records</span>
+    </div>
+    {% if collection.records %}
+    <div class="table-responsive">
+        <table class="table table-sm table-striped table-bordered align-middle">
+            <thead class="table-dark">
+                <tr>
+                    {% for column in collection.records[0].keys() %}
+                    <th>{{ column }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in collection.records %}
+                <tr>
+                    {% for value in row.values() %}
+                    <td>{{ value if value is not none else '' }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-muted">No records in this sheet.</p>
+    {% endif %}
+    {% if collection.count > 25 %}
+    <p class="small text-muted">Showing the first 25 rows.</p>
+    {% endif %}
+</section>
+{% endfor %}
+
+<div class="d-flex flex-wrap gap-2 border-top pt-3">
+    <form method="post" action="{{ url_for('save_import', token=token) }}">
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save me-1"></i>Save to portfolio
+        </button>
+    </form>
+    <form method="post" action="{{ url_for('discard_import', token=token) }}">
+        <button type="submit" class="btn btn-outline-secondary">
+            <i class="fas fa-times me-1"></i>Discard
+        </button>
+    </form>
+</div>
+{% endblock %}

@@ -8,6 +8,18 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+MF_METADATA_COLUMNS = [
+    "MF_Name",
+    "Investor_Name",
+    "PAN",
+    "Folio_Number",
+    "Product_Code",
+    "Scheme_Name",
+    "Scheme_Type",
+    "Dividend_Rate",
+    "Broker",
+]
+
 
 def symbol_for_fund(
     fund_name: str, isin: Optional[str] = None, slug_prefix: str = "MF"
@@ -83,7 +95,8 @@ def trade_records_to_dataframe(records: List[Dict[str, Any]]) -> pd.DataFrame:
     df["Txn_Date"] = pd.to_datetime(df["Txn_Date"])
     for c in ("Quantity", "Price", "Amount", "Fees", "Total_Value"):
         df[c] = pd.to_numeric(df[c], errors="coerce")
-    return df.sort_values(["Txn_Date", "Symbol"]).reset_index(drop=True)
+    metadata = [column for column in MF_METADATA_COLUMNS if column in df.columns]
+    return df[cols + metadata].sort_values(["Txn_Date", "Symbol"]).reset_index(drop=True)
 
 
 def build_dividend_record(
@@ -110,4 +123,6 @@ def dividend_records_to_dataframe(records: List[Dict[str, Any]]) -> pd.DataFrame
     df = pd.DataFrame(records)
     df["Date"] = pd.to_datetime(df["Date"])
     df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
-    return df.sort_values("Date").reset_index(drop=True)
+    columns = ["Date", "Fund_Name", "ISIN", "Amount", "Notes"]
+    metadata = [column for column in MF_METADATA_COLUMNS if column in df.columns]
+    return df[columns + metadata].sort_values("Date").reset_index(drop=True)
