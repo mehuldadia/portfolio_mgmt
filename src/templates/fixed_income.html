@@ -121,7 +121,7 @@
                                         <td><code>{{ row.Symbol }}</code></td>
                                         <td><span class="badge bg-{% if row.Type == 'BUY' %}success{% else %}warning{% endif %}">{{ row.Type }}</span></td>
                                         <td class="text-end">{{ "%.4f"|format(row.Quantity) }}</td>
-                                        <td class="text-end">{{ "%.4f"|format(row.Price) }}</td>
+                                        <td class="text-end">{{ row.Price|inr(4) }}</td>
                                         <td>
                                             <form method="post" action="{{ url_for('fixed_income_delete_trade', index=loop.index0) }}" class="d-inline" onsubmit="return confirm('Delete?');">
                                                 <button type="submit" class="btn btn-sm btn-outline-danger py-0">×</button>

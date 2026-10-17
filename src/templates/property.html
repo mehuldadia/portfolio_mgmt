@@ -84,11 +84,11 @@
                                 <td>{{ row.name }}</td>
                                 <td>{{ row.asset_type }}</td>
                                 <td>{{ row.acquisition_date.strftime('%Y-%m-%d') if row.acquisition_date else '' }}</td>
-                                <td class="text-end">${{ "%.2f"|format(row.cost_basis) }}</td>
+                                <td class="text-end">{{ row.cost_basis|inr }}</td>
                                 <td>
                                     {% if row.disposition_date %}
                                     <span class="badge bg-secondary">Sold {{ row.disposition_date.strftime('%Y-%m-%d') }}</span>
-                                    <br><small class="text-muted">Gain: ${{ "%.2f"|format((row.disposition_proceeds or 0) - row.cost_basis) }}</small>
+                                    <br><small class="text-muted">Gain: {{ ((row.disposition_proceeds or 0) - row.cost_basis)|inr }}</small>
                                     {% else %}
                                     <span class="badge bg-success">Held</span>
                                     {% endif %}

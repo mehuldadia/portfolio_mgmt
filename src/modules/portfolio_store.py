@@ -94,7 +94,14 @@ class PortfolioStore:
     def _scoped_collection(collection: str, investor_pan: str | None) -> str:
         return f"{investor_pan.upper()}::{collection}" if investor_pan else collection
 
+    def _effective_pan(self, investor_pan: str | None) -> str | None:
+        if investor_pan is not None:
+            return investor_pan.strip().upper()
+        investor = self.get_active_investor()
+        return investor["pan"] if investor else None
+
     def load(self, collection: str, investor_pan: str | None = None) -> list[dict]:
+        investor_pan = self._effective_pan(investor_pan)
         collection = self._scoped_collection(collection, investor_pan)
         with self._connect() as connection:
             rows = connection.execute(
@@ -110,6 +117,7 @@ class PortfolioStore:
         investor_pan: str | None = None,
     ) -> None:
         """Atomically replace one or more complete collections."""
+        investor_pan = self._effective_pan(investor_pan)
         scoped_collections = {
             self._scoped_collection(name, investor_pan): records
             for name, records in collections.items()

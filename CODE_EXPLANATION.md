@@ -1,6 +1,6 @@
 # Stock Gains Analyzer - Code Explanation
 
-> **Current data storage:** Saved portfolio records are stored in `data/portfolio.sqlite3` and loaded at startup. Excel uploads are previewed first; only confirmed imports update SQLite and retain the source workbook under `data/uploads/`. See [Persistence and Save Workflow](#persistence-and-save-workflow).
+> **Current data storage:** Investor profiles are keyed by unique PAN in `data/portfolio.sqlite3`; each investor's portfolio loads when selected. Excel uploads are previewed first; only confirmed imports update that PAN's records and retain the source workbook under `data/uploads/`. Valuations are formatted in INR (₹).
 
 ## 📁 Project Structure
 
@@ -10,6 +10,7 @@ stock_gains_analyzer/
 ├── src/modules/
 │   ├── transaction_reader.py      # Excel → DataFrame
 │   ├── portfolio_store.py         # Local SQLite persistence
+│   ├── currency.py                # INR display formatting
 │   ├── gains_calculator.py        # FIFO, short/long-term
 │   ├── excel_exporter.py          # Excel exports
 │   ├── mutual_fund_excel.py       # MF Excel template + upload reader
@@ -121,6 +122,10 @@ All pages extend `base.html` which provides:
 
 **`@app.route('/charts')`**
 - Requires `current_summary`; else redirect `/stocks`
+
+**`/investors`**
+- Creates investor profiles with a unique PAN and name
+- Switching investors reloads only that PAN's saved collections; first investor creation claims any legacy unassigned records
 
 **Other routes:** mutual funds, fixed income, property pages, their exports, and `dashboard_aggregator`-related behavior live in the same `app.py` file.
 
@@ -446,12 +451,13 @@ Excel file with 4 sheets:
 
 ## Persistence and Save Workflow
 
-- SQLite database: `data/portfolio.sqlite3`. `modules/portfolio_store.py` stores ordered stock, mutual-fund, fixed-income, and property records and accepted-upload metadata.
+- SQLite database: `data/portfolio.sqlite3`. `modules/portfolio_store.py` stores investor profiles, the active PAN, and PAN-scoped stock, mutual-fund, fixed-income, and property records, plus accepted-upload metadata.
+- The Investors screen creates named PAN profiles and switches the active portfolio. PAN is normalized to uppercase and unique case-insensitively. Existing unassigned records are attached to the first configured investor.
 - Startup loads the saved records into the app and recalculates derived FIFO gains and positions.
 - Stock and mutual-fund workbook uploads first go to a review page. Save atomically updates the portfolio records and upload metadata, then retains the source workbook under `data/uploads/` with a generated unique filename. Discard does not change the database and does not retain the workbook.
 - Manual MF, FI, and property additions, edits/dispositions, deletes, and clears write through to SQLite.
 - Generated reports remain under `output/`. Database files and accepted source workbooks are ignored by Git.
-- In-memory lists are still used as the current process's working view, so this design is intended for this local single-user app; concurrent multi-user access would need user identity and database-backed request-level reads/writes.
+- In-memory lists are still used as the current process's working view. The app has one active investor per running process; this is a local portfolio manager, not an authenticated concurrent multi-user service.
 
 ## 🎯 Key Concepts
 
@@ -476,9 +482,9 @@ Excel file with 4 sheets:
 - Enables dynamic content loading
 
 ### **Global State Management**
-- Module-level collections are an in-memory working copy loaded from SQLite at startup
+- Module-level collections are an in-memory working copy loaded from SQLite for the selected investor
 - Mutating routes write the affected collection to SQLite, so data survives restarts
-- All browser users still share one local portfolio; add authentication and per-user records before multi-user deployment
+- The active selection is shared by the local process; add authentication and request/session-scoped database access before concurrent multi-user deployment
 
 ---
 

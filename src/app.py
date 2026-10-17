@@ -9,6 +9,7 @@ from datetime import datetime
 import tempfile
 import uuid
 import json
+import sqlite3
 import pandas as pd
 from werkzeug.utils import secure_filename
 
@@ -33,6 +34,7 @@ from modules.fixed_income_transactions import (
 )
 from modules.property_assets import build_property_asset, record_disposition
 from modules.portfolio_store import PortfolioStore
+from modules.currency import format_inr
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(APP_DIR)
@@ -43,6 +45,7 @@ app = Flask(
     static_folder=os.path.join(APP_DIR, "static"),
 )
 app.secret_key = "your-secret-key-here"
+app.jinja_env.filters["inr"] = format_inr
 
 UPLOAD_FOLDER = os.path.join(PROJECT_DIR, "data")
 OUTPUT_FOLDER = os.path.join(PROJECT_DIR, "output")
@@ -83,6 +86,8 @@ property_portfolio = []
 
 portfolio_store = PortfolioStore(os.path.join(UPLOAD_FOLDER, "portfolio.sqlite3"))
 pending_imports = {}
+active_investor = portfolio_store.get_active_investor()
+active_investor_pan = active_investor["pan"] if active_investor else None
 
 
 def _restore_record_dates(records, fields):
@@ -97,7 +102,18 @@ def _restore_record_dates(records, fields):
 def _load_saved_portfolio():
     global current_transactions, current_gains, current_positions, current_summary
 
-    stock_records = portfolio_store.load("stock_transactions")
+    current_transactions = current_gains = current_positions = current_summary = None
+    mf_trade_records.clear()
+    mf_dividend_records.clear()
+    fi_trade_records.clear()
+    fi_interest_records.clear()
+    property_portfolio.clear()
+
+    if not active_investor_pan:
+        _sync_fifo_analyses()
+        return
+
+    stock_records = portfolio_store.load("stock_transactions", active_investor_pan)
     if stock_records:
         current_transactions = pd.DataFrame(stock_records)
         current_transactions["Txn_Date"] = pd.to_datetime(current_transactions["Txn_Date"])
@@ -106,13 +122,13 @@ def _load_saved_portfolio():
         )
         current_summary = gains_calculator.get_gains_summary(current_gains)
 
-    mf_trade_records.extend(_restore_record_dates(portfolio_store.load("mf_trades"), ("Txn_Date",)))
-    mf_dividend_records.extend(_restore_record_dates(portfolio_store.load("mf_dividends"), ("Date",)))
-    fi_trade_records.extend(_restore_record_dates(portfolio_store.load("fi_trades"), ("Txn_Date",)))
-    fi_interest_records.extend(_restore_record_dates(portfolio_store.load("fi_interest"), ("Date",)))
+    mf_trade_records.extend(_restore_record_dates(portfolio_store.load("mf_trades", active_investor_pan), ("Txn_Date",)))
+    mf_dividend_records.extend(_restore_record_dates(portfolio_store.load("mf_dividends", active_investor_pan), ("Date",)))
+    fi_trade_records.extend(_restore_record_dates(portfolio_store.load("fi_trades", active_investor_pan), ("Txn_Date",)))
+    fi_interest_records.extend(_restore_record_dates(portfolio_store.load("fi_interest", active_investor_pan), ("Date",)))
     property_portfolio.extend(
         _restore_record_dates(
-            portfolio_store.load("property_assets"),
+            portfolio_store.load("property_assets", active_investor_pan),
             ("acquisition_date", "disposition_date"),
         )
     )
@@ -141,7 +157,68 @@ def _sync_fifo_analyses():
         fi_summary = gains_calculator.get_gains_summary(fi_gains)
 
 
+def _activate_investor(pan):
+    global active_investor, active_investor_pan
+    portfolio_store.set_active_investor(pan)
+    active_investor = portfolio_store.get_active_investor()
+    active_investor_pan = active_investor["pan"] if active_investor else None
+    _load_saved_portfolio()
+
+
 _load_saved_portfolio()
+
+
+@app.before_request
+def require_active_investor():
+    if request.endpoint in {"static", "investors", "create_investor", "switch_investor"}:
+        return None
+    if not active_investor_pan:
+        flash("Create or select an investor to open a portfolio.", "info")
+        return redirect(url_for("investors"))
+    return None
+
+
+@app.context_processor
+def inject_investor_navigation():
+    return {
+        "active_investor": active_investor,
+        "available_investors": portfolio_store.list_investors(),
+    }
+
+
+@app.route("/investors")
+def investors():
+    return render_template(
+        "investors.html",
+        investors=portfolio_store.list_investors(),
+        active_pan=active_investor_pan,
+    )
+
+
+@app.route("/investors/create", methods=["POST"])
+def create_investor():
+    try:
+        investor = portfolio_store.create_investor(
+            request.form.get("pan", ""), request.form.get("name", "")
+        )
+        if active_investor_pan is None:
+            _activate_investor(investor["pan"])
+        flash(f"Investor {investor['name']} ({investor['pan']}) added.", "success")
+    except sqlite3.IntegrityError:
+        flash("An investor with this PAN already exists.", "error")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("investors"))
+
+
+@app.route("/investors/select", methods=["POST"])
+def switch_investor():
+    try:
+        _activate_investor(request.form.get("pan", ""))
+        flash(f"Switched to {active_investor['name']} ({active_investor_pan}).", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("investors"))
 
 
 def _parse_date(s: str) -> datetime:
@@ -189,6 +266,8 @@ def _save_pending_import(token):
     pending = pending_imports.get(token)
     if pending is None:
         raise ValueError("This import preview has expired. Please upload the file again.")
+    if pending["investor_pan"] != active_investor_pan:
+        raise ValueError("This preview belongs to another investor. Switch investors and retry.")
 
     batch_id = uuid.uuid4().hex
     uploads_dir = os.path.join(app.config["UPLOAD_FOLDER"], "uploads")
@@ -213,7 +292,9 @@ def _save_pending_import(token):
             gains, positions = gains_calculator.calculate_gains(transactions)
             summary = gains_calculator.get_gains_summary(gains)
             portfolio_store.replace_many(
-                {"stock_transactions": pending["records"]}, import_batch=batch
+                {"stock_transactions": pending["records"]},
+                import_batch=batch,
+                investor_pan=pending["investor_pan"],
             )
             current_transactions = transactions
             current_gains, current_positions, current_summary = gains, positions, summary
@@ -224,6 +305,7 @@ def _save_pending_import(token):
             portfolio_store.replace_many(
                 {"mf_trades": trades, "mf_dividends": dividends},
                 import_batch=batch,
+                investor_pan=pending["investor_pan"],
             )
             mf_trade_records[:] = trades
             mf_dividend_records[:] = dividends
@@ -331,6 +413,7 @@ def upload_file():
             token = uuid.uuid4().hex
             pending_imports[token] = {
                 "asset_type": "stocks",
+                "investor_pan": active_investor_pan,
                 "filename": filename,
                 "file_bytes": file_bytes,
                 "records": records,
@@ -481,6 +564,7 @@ def mutual_funds_upload():
         token = uuid.uuid4().hex
         pending_imports[token] = {
             "asset_type": "mutual_funds",
+            "investor_pan": active_investor_pan,
             "filename": filename,
             "file_bytes": file_bytes,
             "records": {"mf_trades": trades, "mf_dividends": dividends},

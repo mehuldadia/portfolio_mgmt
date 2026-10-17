@@ -217,7 +217,7 @@ function createYearlyChart(yearlyData) {
                     beginAtZero: true,
                     ticks: {
                         callback: function(value) {
-                            return '$' + value.toFixed(2);
+                            return window.formatINR(value);
                         }
                     }
                 }
@@ -226,7 +226,7 @@ function createYearlyChart(yearlyData) {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            return context.dataset.label + ': $' + context.parsed.y.toFixed(2);
+                            return context.dataset.label + ': ' + window.formatINR(context.parsed.y);
                         }
                     }
                 }
@@ -269,7 +269,7 @@ function createGainsLossesChart(summary) {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            return context.label + ': $' + context.parsed.toFixed(2);
+                            return context.label + ': ' + window.formatINR(context.parsed);
                         }
                     }
                 }
@@ -313,7 +313,7 @@ function createTaxClassificationChart(summary) {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            return context.label + ': $' + context.parsed.toFixed(2);
+                            return context.label + ': ' + window.formatINR(context.parsed);
                         }
                     }
                 }
@@ -365,7 +365,7 @@ function createSymbolsChart(gainsData) {
                     beginAtZero: true,
                     ticks: {
                         callback: function(value) {
-                            return '$' + value.toFixed(2);
+                            return window.formatINR(value);
                         }
                     }
                 }
@@ -374,7 +374,7 @@ function createSymbolsChart(gainsData) {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            return context.dataset.label + ': $' + context.parsed.y.toFixed(2);
+                            return context.dataset.label + ': ' + window.formatINR(context.parsed.y);
                         }
                     }
                 }
@@ -404,7 +404,7 @@ function updateChartSummary(summary, yearlyData, gainsData) {
             <div class="text-center">
                 <h6 class="text-muted">Average Yearly Gain</h6>
                 <h4 class="${avgYearlyGain >= 0 ? 'text-success' : 'text-danger'}">
-                    $${avgYearlyGain.toFixed(2)}
+                    ${window.formatINR(avgYearlyGain)}
                 </h4>
             </div>
         </div>

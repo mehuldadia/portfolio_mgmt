@@ -24,7 +24,7 @@
         <div class="card metric-card">
             <div class="card-body text-center">
                 <h5 class="card-title">Net Gain</h5>
-                <h3 class="mb-0">${{ "%.2f"|format(summary.net_gain) }}</h3>
+                    <h3 class="mb-0">{{ summary.net_gain|inr }}</h3>
             </div>
         </div>
     </div>
@@ -32,7 +32,7 @@
         <div class="card metric-card gain">
             <div class="card-body text-center">
                 <h5 class="card-title">Total Gains</h5>
-                <h3 class="mb-0">${{ "%.2f"|format(summary.total_gains) }}</h3>
+                    <h3 class="mb-0">{{ summary.total_gains|inr }}</h3>
             </div>
         </div>
     </div>
@@ -40,7 +40,7 @@
         <div class="card metric-card loss">
             <div class="card-body text-center">
                 <h5 class="card-title">Total Losses</h5>
-                <h3 class="mb-0">${{ "%.2f"|format(summary.total_losses) }}</h3>
+                    <h3 class="mb-0">{{ summary.total_losses|inr }}</h3>
             </div>
         </div>
     </div>
@@ -64,11 +64,11 @@
                 <div class="row text-center">
                     <div class="col-6">
                         <h6>Gains</h6>
-                        <h4 class="text-success">${{ "%.2f"|format(summary.short_term_gains) }}</h4>
+                            <h4 class="text-success">{{ summary.short_term_gains|inr }}</h4>
                     </div>
                     <div class="col-6">
                         <h6>Losses</h6>
-                        <h4 class="text-danger">${{ "%.2f"|format(summary.short_term_losses) }}</h4>
+                            <h4 class="text-danger">{{ summary.short_term_losses|inr }}</h4>
                     </div>
                 </div>
                 <hr>
@@ -85,11 +85,11 @@
                 <div class="row text-center">
                     <div class="col-6">
                         <h6>Gains</h6>
-                        <h4 class="text-success">${{ "%.2f"|format(summary.long_term_gains) }}</h4>
+                            <h4 class="text-success">{{ summary.long_term_gains|inr }}</h4>
                     </div>
                     <div class="col-6">
                         <h6>Losses</h6>
-                        <h4 class="text-danger">${{ "%.2f"|format(summary.long_term_losses) }}</h4>
+                            <h4 class="text-danger">{{ summary.long_term_losses|inr }}</h4>
                     </div>
                 </div>
                 <hr>
@@ -124,16 +124,16 @@
                                 <td><strong>{{ year }}</strong></td>
                                 <td>
                                     <span class="badge bg-{{ 'success' if data.net_gain >= 0 else 'danger' }}">
-                                        ${{ "%.2f"|format(data.net_gain) }}
+                                        {{ data.net_gain|inr }}
                                     </span>
                                 </td>
                                 <td>
-                                    <span class="text-success">+${{ "%.2f"|format(data.short_term_gains) }}</span><br>
-                                    <span class="text-danger">-${{ "%.2f"|format(data.short_term_losses) }}</span>
+                                    <span class="text-success">+{{ data.short_term_gains|inr }}</span><br>
+                                     <span class="text-danger">-{{ data.short_term_losses|inr }}</span>
                                 </td>
                                 <td>
-                                    <span class="text-success">+${{ "%.2f"|format(data.long_term_gains) }}</span><br>
-                                    <span class="text-danger">-${{ "%.2f"|format(data.long_term_losses) }}</span>
+                                    <span class="text-success">+{{ data.long_term_gains|inr }}</span><br>
+                                     <span class="text-danger">-{{ data.long_term_losses|inr }}</span>
                                 </td>
                                 <td>{{ data.transaction_count }}</td>
                                 <td>{{ data.symbols_traded }}</td>
@@ -192,12 +192,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     <td><strong>${gain.symbol}</strong></td>
                     <td>${gain.sell_date}</td>
                     <td>${gain.sell_quantity}</td>
-                    <td>$${parseFloat(gain.sell_price).toFixed(4)}</td>
+                    <td>${window.formatINR(gain.sell_price)}</td>
                     <td>${gain.buy_date}</td>
-                    <td>$${parseFloat(gain.buy_price).toFixed(4)}</td>
+                    <td>${window.formatINR(gain.buy_price)}</td>
                     <td>
                         <span class="badge bg-${parseFloat(gain.gain_loss) >= 0 ? 'success' : 'danger'}">
-                            $${parseFloat(gain.gain_loss).toFixed(2)}
+                            ${window.formatINR(gain.gain_loss)}
                         </span>
                     </td>
                     <td>

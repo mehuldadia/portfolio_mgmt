@@ -38,7 +38,7 @@ A Flask app to track **stocks** (Excel upload + FIFO capital gains), **mutual fu
 python .\src\app.py
 ```
 
-Open **http://localhost:5000** (dashboard). Use the nav bar to open each asset class.
+Open **http://localhost:5000**. Configure an investor with a unique PAN on the Investors screen, then open that investor's portfolio from the navigation. Add more investors and switch portfolios from the same screen.
 
 ### Stocks Excel format
 
@@ -63,7 +63,7 @@ portfolio_mgmt/
 └── README.md
 ```
 
-Portfolio records are stored locally in `data/portfolio.sqlite3` and restored on startup. Stock and mutual-fund Excel uploads are shown for review before saving; accepted imports update the database and retain the source workbook under `data/uploads/`, while discarded imports are not stored. Database and upload files are excluded from Git.
+Portfolio records are stored locally in `data/portfolio.sqlite3`, keyed by investor PAN, and restored on startup. Valuations and reports are displayed in INR (₹). Stock and mutual-fund Excel uploads are shown for review before saving; accepted imports update the selected investor's portfolio and retain the source workbook under `data/uploads/`, while discarded imports are not stored. Database and upload files are excluded from Git. The app has one active investor selection for the local running process; it is not a multi-user authenticated service.
 
 ## License / disclaimer
 

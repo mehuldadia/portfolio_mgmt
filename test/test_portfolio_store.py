@@ -54,6 +54,33 @@ class PortfolioStoreTests(unittest.TestCase):
 
         self.assertEqual(self.store.load("stocks"), [{"Symbol": "FIRST"}])
 
+    def test_pan_scopes_records_and_first_investor_claims_legacy_data(self):
+        self.store.replace_many({"property_assets": [{"name": "Legacy"}]})
+        self.store.create_investor("abcde1234f", "Investor One")
+        self.assertEqual(
+            self.store.load("property_assets"), [{"name": "Legacy"}]
+        )
+
+        self.store.replace_many({"property_assets": [{"name": "One"}]})
+        self.store.create_investor("FGHIJ5678K", "Investor Two")
+        self.store.replace_many(
+            {"property_assets": [{"name": "Two"}]},
+            investor_pan="FGHIJ5678K",
+        )
+
+        self.assertEqual(
+            self.store.load("property_assets", "ABCDE1234F"), [{"name": "One"}]
+        )
+        self.assertEqual(
+            self.store.load("property_assets", "FGHIJ5678K"), [{"name": "Two"}]
+        )
+
+    def test_pan_is_unique_case_insensitively(self):
+        self.store.create_investor("abcde1234f", "Investor One")
+
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.store.create_investor("ABCDE1234F", "Duplicate")
+
 
 if __name__ == "__main__":
     unittest.main()

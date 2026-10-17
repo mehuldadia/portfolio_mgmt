@@ -6,11 +6,28 @@ import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Any
 from .gains_calculator import CapitalGain, Position
+from .currency import format_inr
 import os
 
 
 class ExcelExporter:
     """Handles exporting capital gains data to Excel files."""
+
+    INR_NUMBER_FORMAT = '[$₹-en-IN]#,##,##0.00;[Red]-[$₹-en-IN]#,##,##0.00'
+    CURRENCY_COLUMNS = {
+        "Price",
+        "Amount",
+        "Fees",
+        "Total_Value",
+        "Total_Cost",
+        "Sell_Price",
+        "Sell_Total",
+        "Sell_Fees",
+        "Buy_Price",
+        "Buy_Total",
+        "Buy_Fees",
+        "Gain_Loss",
+    }
     
     def __init__(self, output_dir: str = "output"):
         """
@@ -21,6 +38,19 @@ class ExcelExporter:
         """
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
+
+    def _format_inr_columns(self, writer) -> None:
+        for worksheet in writer.sheets.values():
+            currency_indexes = [
+                cell.column
+                for cell in worksheet[1]
+                if cell.value in self.CURRENCY_COLUMNS
+            ]
+            for column_index in currency_indexes:
+                for row in worksheet.iter_rows(
+                    min_row=2, min_col=column_index, max_col=column_index
+                ):
+                    row[0].number_format = self.INR_NUMBER_FORMAT
     
     def export_capital_gains(self, 
                            capital_gains: List[CapitalGain], 
@@ -62,6 +92,7 @@ class ExcelExporter:
             yearly_df = self._create_yearly_dataframe(capital_gains)
             if not yearly_df.empty:
                 yearly_df.to_excel(writer, sheet_name='Yearly_Breakdown', index=False)
+            self._format_inr_columns(writer)
         
         return filepath
     
@@ -110,7 +141,7 @@ class ExcelExporter:
                 'Metric': ['Total Gains', 'Total Losses', 'Net Gain', 'Short-term Gains', 
                           'Short-term Losses', 'Long-term Gains', 'Long-term Losses', 
                           'Total Transactions', 'Short-term Transactions', 'Long-term Transactions'],
-                'Value': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                'Value': [format_inr(0)] * 7 + [0, 0, 0]
             })
         
         df = pd.DataFrame([
@@ -134,13 +165,13 @@ class ExcelExporter:
         long_term_losses = abs(long_term_df[long_term_df['gain_loss'] < 0]['gain_loss'].sum())
         
         summary_data = [
-            ['Total Gains', f"${total_gains:,.2f}"],
-            ['Total Losses', f"${total_losses:,.2f}"],
-            ['Net Gain', f"${net_gain:,.2f}"],
-            ['Short-term Gains', f"${short_term_gains:,.2f}"],
-            ['Short-term Losses', f"${short_term_losses:,.2f}"],
-            ['Long-term Gains', f"${long_term_gains:,.2f}"],
-            ['Long-term Losses', f"${long_term_losses:,.2f}"],
+            ['Total Gains', format_inr(total_gains)],
+            ['Total Losses', format_inr(total_losses)],
+            ['Net Gain', format_inr(net_gain)],
+            ['Short-term Gains', format_inr(short_term_gains)],
+            ['Short-term Losses', format_inr(short_term_losses)],
+            ['Long-term Gains', format_inr(long_term_gains)],
+            ['Long-term Losses', format_inr(long_term_losses)],
             ['Total Transactions', len(df)],
             ['Short-term Transactions', len(short_term_df)],
             ['Long-term Transactions', len(long_term_df)]
@@ -176,13 +207,13 @@ class ExcelExporter:
             
             yearly_data.append({
                 'Year': year,
-                'Total_Gains': f"${total_gains:,.2f}",
-                'Total_Losses': f"${total_losses:,.2f}",
-                'Net_Gain': f"${net_gain:,.2f}",
-                'Short_term_Gains': f"${short_term_data[short_term_data['gain_loss'] > 0]['gain_loss'].sum():,.2f}",
-                'Short_term_Losses': f"${abs(short_term_data[short_term_data['gain_loss'] < 0]['gain_loss'].sum()):,.2f}",
-                'Long_term_Gains': f"${long_term_data[long_term_data['gain_loss'] > 0]['gain_loss'].sum():,.2f}",
-                'Long_term_Losses': f"${abs(long_term_data[long_term_data['gain_loss'] < 0]['gain_loss'].sum()):,.2f}",
+                'Total_Gains': format_inr(total_gains),
+                'Total_Losses': format_inr(total_losses),
+                'Net_Gain': format_inr(net_gain),
+                'Short_term_Gains': format_inr(short_term_data[short_term_data['gain_loss'] > 0]['gain_loss'].sum()),
+                'Short_term_Losses': format_inr(abs(short_term_data[short_term_data['gain_loss'] < 0]['gain_loss'].sum())),
+                'Long_term_Gains': format_inr(long_term_data[long_term_data['gain_loss'] > 0]['gain_loss'].sum()),
+                'Long_term_Losses': format_inr(abs(long_term_data[long_term_data['gain_loss'] < 0]['gain_loss'].sum())),
                 'Transaction_Count': len(year_data),
                 'Symbols_Traded': year_data['symbol'].nunique()
             })
@@ -230,6 +261,7 @@ class ExcelExporter:
                 'Type': 'count'
             }).rename(columns={'Type': 'Transaction_Count'})
             symbol_summary.to_excel(writer, sheet_name='Symbol_Summary')
+            self._format_inr_columns(writer)
         
         return filepath
 
@@ -270,6 +302,7 @@ class ExcelExporter:
                 pd.DataFrame(
                     columns=["Date", "Fund_Name", "ISIN", "Amount", "Notes"]
                 ).to_excel(writer, sheet_name="Dividends", index=False)
+            self._format_inr_columns(writer)
 
         return filepath
 
@@ -309,6 +342,7 @@ class ExcelExporter:
                 pd.DataFrame(
                     columns=["Date", "Fund_Name", "ISIN", "Amount", "Notes"]
                 ).to_excel(writer, sheet_name="Interest", index=False)
+            self._format_inr_columns(writer)
 
         return filepath
 
