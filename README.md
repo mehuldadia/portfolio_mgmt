@@ -18,14 +18,16 @@ A Flask app to track **stocks** (Excel upload + FIFO capital gains), **mutual fu
 ##### create virtual environment
 - python -m venv env_stock_app
 
-###### if you want to deactivate virtual environment
+###### if virtual environment is giving problem then you can deactivate virtual environment and reinstall
 - deactivate 
 
-###### delete virtual environment
+###### Delete the incomplete virtual environment; From your project directory, run this in PowerShell:
+- Remove-Item -Recurse -Force .\env_stock_app
 
+####### then recreate the virtual environment as mentioned above
 
 # activate virtual environment
-- venv\Scripts\activate
+- .\env_stock_app\Scripts\activate.bat
 
 - pip install -r requirements.txt
 ```
@@ -33,7 +35,7 @@ A Flask app to track **stocks** (Excel upload + FIFO capital gains), **mutual fu
 ## Usage
 
 ```bash
-python app.py
+python .\src\app.py
 ```
 
 Open **http://localhost:5000** (dashboard). Use the nav bar to open each asset class.
